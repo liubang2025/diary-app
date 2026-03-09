@@ -2,95 +2,83 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>七曜日记 - Shichiyo Diary</title>
     <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
-   <style>
-        :root { --main-color: #00acc1; --bg-light: #f5f5f5; }
+    <style>
+        :root { --main-color: #00acc1; --bg-light: #f5f5f5; --calendar-bg: #e0e0e0; }
         
-        /* 强制 body 不滚动，由内部组件滚动 */
-        body, html { 
-            margin: 0; 
-            padding: 0; 
-            height: 100%; 
-            font-family: sans-serif; 
-            background: #eee; 
-            overflow: hidden; 
-        }
-        
-        /* 登录遮罩层 */
+        body, html { margin: 0; padding: 0; height: 100%; font-family: "Microsoft YaHei", sans-serif; overflow: hidden; background: #eee; }
+
+        /* 登录遮罩 */
         #auth-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: white; z-index: 1000; display: flex;
             flex-direction: column; align-items: center; justify-content: center;
         }
-        .auth-box { padding: 40px; border: 1px solid #ddd; border-radius: 8px; text-align: center; }
-        .auth-box input { display: block; width: 250px; margin: 10px 0; padding: 10px; }
-        .auth-box button { width: 100%; padding: 10px; background: var(--main-color); color: white; border: none; cursor: pointer; }
+        .auth-box { padding: 40px; border: 1px solid #ddd; border-radius: 12px; text-align: center; background: white; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .auth-box input { display: block; width: 260px; margin: 10px 0; padding: 12px; border: 1px solid #ddd; border-radius: 6px; }
+        .auth-box button { width: 100%; padding: 12px; background: var(--main-color); color: white; border: none; border-radius: 6px; cursor: pointer; }
 
-        /* 主界面布局 */
+        /* 主容器布局 */
         #app { display: none; height: 100vh; flex-direction: row; overflow: hidden; }
-        
+
+        /* 左侧侧边栏 */
         .sidebar { 
-            width: 320px; 
-            background: #e0e0e0; 
-            transition: 0.3s; 
-            overflow: hidden; 
-            border-right: 1px solid #ccc; 
-            position: relative; 
-            height: 100%;
+            width: 320px; background: var(--calendar-bg); transition: 0.3s; 
+            overflow: hidden; border-right: 1px solid #ccc; position: relative; flex-shrink: 0;
         }
         .sidebar.collapsed { width: 0; border: none; }
 
-        /* 右侧核心区域：固定高度是关键 */
+        /* 日历样式修复 - 核心部分 */
+        #calendar-container { 
+            width: 280px; margin: 20px auto; background: white; padding: 15px; 
+            border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); box-sizing: border-box;
+        }
+        .curr-month { font-weight: bold; color: var(--main-color); text-align: center; margin-bottom: 15px; font-size: 18px; }
+        
+        /* 强制 7 列网格排列 */
+        .calendar-grid { 
+            display: grid !important; 
+            grid-template-columns: repeat(7, 1fr); 
+            gap: 2px; text-align: center; 
+        }
+        .day-name { font-weight: bold; color: #cc0000; font-size: 13px; padding-bottom: 5px; }
+        .day { padding: 8px 0; cursor: pointer; border-radius: 4px; font-size: 14px; }
+        .day:hover { background: #b2ebf2; }
+        .day.today { background: var(--main-color); color: white; font-weight: bold; }
+
+        /* 右侧正文区域 */
         .main-content { 
-            flex: 1; 
-            background: white; 
-            padding: 20px; 
-            position: relative; 
-            display: flex; 
-            flex-direction: column; 
-            height: 100vh;           /* 占据整个屏幕高度 */
-            box-sizing: border-box;  /* 包含 padding 在内 */
+            flex: 1; background: white; padding: 20px; position: relative; 
+            display: flex; flex-direction: column; height: 100vh; box-sizing: border-box;
         }
         
-        .toggle-btn { position: absolute; left: 0; top: 50%; transform: translateY(-50%); background: var(--main-color); color: white; border: none; cursor: pointer; z-index: 99; padding: 15px 5px; border-radius: 0 5px 5px 0; }
-        
-        .header { display: flex; justify-content: space-between; color: var(--main-color); font-size: 20px; font-weight: bold; margin-bottom: 10px; flex-shrink: 0; }
+        .toggle-btn { 
+            position: absolute; left: 0; top: 50%; transform: translateY(-50%); 
+            background: var(--main-color); color: white; border: none; cursor: pointer; 
+            z-index: 99; padding: 15px 5px; border-radius: 0 5px 5px 0; 
+        }
+
+        .header { display: flex; justify-content: space-between; color: var(--main-color); font-size: 22px; font-weight: bold; margin-bottom: 10px; flex-shrink: 0; }
         .title-input { width: 100%; padding: 12px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px; flex-shrink: 0; box-sizing: border-box; }
 
-        /* 编辑器容器：自动占据剩余空间并支持内部滚动 */
-        #editor { 
-            flex: 1; 
-            display: flex; 
-            flex-direction: column; 
-            overflow: hidden; /* 隐藏外层溢出 */
-            min-height: 0;    /* 必须加这行，否则 flex 会被内容撑开 */
-        }
-
-        /* 重点：让 Quill 编辑器内部文字区可滚动 */
-        .ql-container.ql-snow {
-            flex: 1;
-            overflow-y: auto; 
-        }
+        /* 编辑器内部滚动 */
+        #editor { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; border: 1px solid #eee; }
+        .ql-container { flex: 1; overflow-y: auto; font-size: 16px; }
+        
+        /* 自动首行缩进与行间距 */
+        .ql-editor p { line-height: 1.8; margin-bottom: 12px; text-indent: 2em; }
 
         .save-btn { 
-            background: var(--main-color); 
-            color: white; 
-            border: none; 
-            padding: 15px; 
-            margin-top: 10px; 
-            border-radius: 5px; 
-            cursor: pointer; 
-            font-size: 16px; 
-            flex-shrink: 0;   /* 确保按钮不会被挤扁 */
+            background: var(--main-color); color: white; border: none; padding: 15px; 
+            margin-top: 10px; border-radius: 6px; cursor: pointer; font-size: 18px; 
+            flex-shrink: 0; font-weight: bold;
         }
-        
-        /* 段落缩进和行高 */
-        .ql-editor p { 
-            line-height: 1.8; 
-            margin-bottom: 10px; 
-            text-indent: 2em; /* 自动首行缩进两个字 */
+
+        /* 手机适配 */
+        @media (max-width: 768px) {
+            .sidebar { position: absolute; z-index: 100; height: 100%; box-shadow: 2px 0 10px rgba(0,0,0,0.2); }
         }
     </style>
 </head>
@@ -98,39 +86,35 @@
 
 <div id="auth-overlay">
     <div class="auth-box">
-        <h2>七曜日记</h2>
-        <input type="email" id="login-email" placeholder="邮箱账号">
-        <input type="password" id="login-pw" placeholder="密码 (至少6位)">
+        <h2 style="color:var(--main-color)">七曜日记</h2>
+        <input type="email" id="email" placeholder="邮箱账号">
+        <input type="password" id="pw" placeholder="密码 (至少6位)">
         <button onclick="handleAuth()">进入日记本</button>
-        <p style="color: #999; font-size: 12px; margin-top: 15px;">首次输入新账号将自动注册</p>
+        <p style="font-size:12px; color:#999; margin-top:10px;">初次使用将自动为您注册账号</p>
     </div>
 </div>
 
-<div class="container" id="main-app" style="display: none;">
+<div id="app">
     <div class="sidebar" id="sidebar">
         <div id="calendar-container">
             <div class="curr-month" id="month-year">2026年3月</div>
             <div class="calendar-grid" id="calendar-days"></div>
         </div>
-        <div style="padding: 20px; font-size: 12px; color: #666; text-align: center;">
+        <div style="text-align:center; padding:20px; font-size:12px; color:#666;">
             <p>七曜：月(Mon) 火(Tue) 水(Wed)...</p>
-            <button onclick="handleLogout()" style="margin-top: 40px; background: none; border: 1px solid #bbb; cursor: pointer; padding: 5px 10px; border-radius: 4px;">退出登录</button>
+            <button onclick="handleLogout()" style="margin-top:30px; border:1px solid #ccc; background:none; padding:5px 10px; cursor:pointer;">退出登录</button>
         </div>
     </div>
 
     <div class="main-content">
-        <button class="toggle-btn" id="t-btn" onclick="toggleSidebar()">◀</button>
-        
-        <div class="header-area">
-            <div class="date-title" id="display-date">2026-03-09</div>
-            <div id="user-tag" style="font-size: 12px; opacity: 0.7;"></div>
+        <button class="toggle-btn" onclick="toggleSidebar()">◀</button>
+        <div class="header">
+            <span id="date-display">2026-03-09</span>
+            <span id="user-display" style="font-size:12px; font-weight:normal; opacity:0.6;"></span>
         </div>
-
-        <input type="text" id="diary-title" class="title-input" placeholder="请输入今日标题...">
-        
+        <input type="text" id="diary-title" class="title-input" placeholder="请输入日记标题...">
         <div id="editor"></div>
-
-        <button class="save-btn" onclick="saveDiary()">💾 保存日记到云端</button>
+        <button class="save-btn" onclick="saveToFirebase()">💾 保存到云端</button>
     </div>
 </div>
 
@@ -140,7 +124,7 @@
     import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
     import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-    // --- ❗ 请替换为你自己的 Firebase 配置 ---
+    // --- 这里替换为你自己的 Firebase 配置 ---
     const firebaseConfig = {
         apiKey: "AIzaSyCMmkx_Nk-ZQUbM7S1LkgpnrN3kYtZHckQ",
         authDomain: "my-diary-2026.firebaseapp.com",
@@ -151,15 +135,13 @@
         measurementId: "G-4LVHLEVL6W"
     };
 
-    // 初始化 Firebase
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
 
-    // 初始化 Quill 编辑器
-    const quill = new Quill('#editor', {
+    // 初始化富文本编辑器
+    var quill = new Quill('#editor', {
         theme: 'snow',
-        placeholder: '在这里记录今天的故事...',
         modules: {
             toolbar: [
                 [{ 'size': ['small', false, 'large', 'huge'] }],
@@ -171,105 +153,84 @@
         }
     });
 
-    // 登录与注册逻辑
+    // 登录/注册逻辑
     window.handleAuth = async () => {
-        const email = document.getElementById('login-email').value;
-        const pw = document.getElementById('login-pw').value;
-        if(!email || pw.length < 6) return alert("请输入完整信息，密码至少6位");
-
+        const e = document.getElementById('email').value;
+        const p = document.getElementById('pw').value;
         try {
-            await signInWithEmailAndPassword(auth, email, pw);
+            await signInWithEmailAndPassword(auth, e, p);
         } catch (error) {
             if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
-                try {
-                    await createUserWithEmailAndPassword(auth, email, pw);
-                    alert("欢迎新用户！账号已自动创建。");
-                } catch (e) { alert("创建账号失败: " + e.message); }
-            } else {
-                alert("登录失败: " + error.message);
-            }
+                try { await createUserWithEmailAndPassword(auth, e, p); } catch(err) { alert("注册失败:"+err.message); }
+            } else { alert("登录失败: " + error.message); }
         }
     };
 
-    // 监听登录状态
+    // 状态监听
     onAuthStateChanged(auth, (user) => {
         if (user) {
             document.getElementById('auth-overlay').style.display = 'none';
-            document.getElementById('main-app').style.display = 'flex';
-            document.getElementById('user-tag').innerText = user.email;
-            loadDiary(user.uid);
+            document.getElementById('app').style.display = 'flex';
+            document.getElementById('user-display').innerText = user.email;
             renderCalendar();
+            loadDiary(user.uid);
         } else {
             document.getElementById('auth-overlay').style.display = 'flex';
-            document.getElementById('main-app').style.display = 'none';
+            document.getElementById('app').style.display = 'none';
         }
     });
 
-    // 保存日记
-    window.saveDiary = async () => {
+    // 云端同步
+    window.saveToFirebase = async () => {
         const user = auth.currentUser;
         if (!user) return;
-        const title = document.getElementById('diary-title').value;
-        const content = quill.root.innerHTML;
-
         try {
             await setDoc(doc(db, "diaries", user.uid), {
-                title: title,
-                content: content,
-                date: new Date().toISOString().split('T')[0],
-                updatedAt: new Date()
+                title: document.getElementById('diary-title').value,
+                content: quill.root.innerHTML,
+                time: new Date()
             });
-            alert("✅ 日记已同步到云端");
-        } catch (e) { alert("保存失败: " + e.message); }
+            alert("✅ 保存成功！");
+        } catch (e) { alert("保存失败: " + e); }
     };
 
-    // 读取日记
     async function loadDiary(uid) {
-        const docRef = doc(db, "diaries", uid);
-        const docSnap = await getDoc(docRef);
+        const docSnap = await getDoc(doc(db, "diaries", uid));
         if (docSnap.exists()) {
-            const data = docSnap.data();
-            document.getElementById('diary-title').value = data.title || "";
-            quill.root.innerHTML = data.content || "";
+            document.getElementById('diary-title').value = docSnap.data().title || "";
+            quill.root.innerHTML = docSnap.data().content || "";
         }
     }
 
-    // 退出登录
     window.handleLogout = () => signOut(auth);
 
-    // 侧边栏折叠
     window.toggleSidebar = () => {
-        const sb = document.getElementById('sidebar');
-        const btn = document.getElementById('t-btn');
-        sb.classList.toggle('collapsed');
-        btn.innerText = sb.classList.contains('collapsed') ? '▶' : '◀';
+        const s = document.getElementById('sidebar');
+        s.classList.toggle('collapsed');
+        document.querySelector('.toggle-btn').innerText = s.classList.contains('collapsed') ? '▶' : '◀';
     };
 
-    // 生成日历
+    // 生成日历函数
     function renderCalendar() {
-        const daysContainer = document.getElementById('calendar-days');
+        const container = document.getElementById('calendar-days');
         const now = new Date();
-        const year = now.getFullYear();
-        const month = now.getMonth();
+        const y = now.getFullYear();
+        const m = now.getMonth();
+        document.getElementById('month-year').innerText = `${y}年 ${m+1}月`;
         
-        document.getElementById('month-year').innerText = `${year}年 ${month + 1}月`;
-        document.getElementById('display-date').innerText = now.toISOString().split('T')[0];
+        const week = ['日','一','二','三','四','五','六'];
+        container.innerHTML = '';
+        week.forEach(d => container.innerHTML += `<div class="day-name">${d}</div>`);
 
-        const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
-        daysContainer.innerHTML = '';
-        weekDays.forEach(d => daysContainer.innerHTML += `<div class="day-name">${d}</div>`);
+        const first = new Date(y, m, 1).getDay();
+        const last = new Date(y, m+1, 0).getDate();
 
-        const firstDay = new Date(year, month, 1).getDay();
-        const lastDate = new Date(year, month + 1, 0).getDate();
-
-        for (let i = 0; i < firstDay; i++) daysContainer.innerHTML += `<div></div>`;
-        for (let d = 1; d <= lastDate; d++) {
+        for (let i=0; i<first; i++) container.innerHTML += `<div></div>`;
+        for (let d=1; d<=last; d++) {
             const isToday = d === now.getDate() ? 'today' : '';
-            daysContainer.innerHTML += `<div class="day ${isToday}">${d}</div>`;
+            container.innerHTML += `<div class="day ${isToday}">${d}</div>`;
         }
     }
 </script>
 </body>
 </html>
-
-
