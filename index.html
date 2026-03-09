@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>七曜日记 - Firebase 云同步版</title>
+    <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+    <style>
+        :root { --main-color: #00acc1; --bg-light: #f5f5f5; }
+        body { margin: 0; font-family: sans-serif; background: #eee; }
+        
+        /* 登录遮罩层 */
+        #auth-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: white; z-index: 1000; display: flex;
+            flex-direction: column; align-items: center; justify-content: center;
+        }
+        .auth-box { padding: 40px; border: 1px solid #ddd; border-radius: 8px; text-align: center; }
+        .auth-box input { display: block; width: 250px; margin: 10px 0; padding: 10px; }
+        .auth-box button { width: 100%; padding: 10px; background: var(--main-color); color: white; border: none; cursor: pointer; }
+
+        /* 主界面布局 */
+        #app { display: none; height: 100vh; flex-direction: row; }
+        .sidebar { width: 320px; background: #e0e0e0; transition: 0.3s; overflow: hidden; border-right: 1px solid #ccc; position: relative; }
+        .sidebar.collapsed { width: 0; border: none; }
+        .main-content { flex: 1; background: white; padding: 20px; position: relative; display: flex; flex-direction: column; }
+        
+        .toggle-btn { position: absolute; left: 0; top: 50%; transform: translateY(-50%); background: var(--main-color); color: white; border: none; cursor: pointer; z-index: 99; padding: 15px 5px; border-radius: 0 5px 5px 0; }
+        
+        .header { display: flex; justify-content: space-between; color: var(--main-color); font-size: 20px; font-weight: bold; margin-bottom: 10px; }
+        .title-input { width: 100%; padding: 12px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px; }
+        #editor { flex: 1; min-height: 400px; }
+        .save-btn { background: var(--main-color); color: white; border: none; padding: 15px; margin-top: 10px; border-radius: 5px; cursor: pointer; font-size: 16px; }
+        
+        /* 段落缩进和行高（你的特殊要求） */
+        .ql-editor p { line-height: 1.8; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+
+<div id="auth-overlay">
+    <div class="auth-box">
+        <h2 style="color: var(--main-color)">七曜日记登录</h2>
+        <input type="email" id="email" placeholder="邮箱">
+        <input type="password" id="password" placeholder="密码">
+        <button onclick="handleAuth()">进入日记本</button>
+        <p style="font-size: 12px; color: #666; margin-top: 10px;">注：第一次输入将自动为您注册</p>
+    </div>
+</div>
+
+<div id="app">
+    <div class="sidebar" id="sidebar">
+        <div style="padding: 20px;">
+            <div style="background: #b2ebf2; padding: 10px; text-align: center;">2026年3月</div>
+            <p>日历功能载入中...</p>
+            <button onclick="handleLogout()" style="position:absolute; bottom: 10px; left: 10px;">退出登录</button>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <button class="toggle-btn" onclick="toggleSidebar()">◀</button>
+        <div class="header">
+            <span id="date-display">2026-03-09</span>
+            <span id="user-display" style="font-size: 12px; font-weight: normal;"></span>
+        </div>
+        <input type="text" id="diary-title" class="title-input" placeholder="请输入日记标题...">
+        <div id="editor"></div>
+        <button class="save-btn" onclick="saveToFirebase()">💾 保存到云端</button>
+    </div>
+</div>
+
+<script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
+<script type="module">
+    // 1. 引入 Firebase SDK
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    // 2. 这里粘贴你在 Firebase 控制台复制的配置！！！
+    const firebaseConfig = {
+        apiKey: "AIzaSyCMmkx_Nk-ZQUbM7S1LkgpnrN3kYtZHckQ",
+        authDomain: "my-diary-2026.firebaseapp.com",
+        projectId: "my-diary-2026",
+        storageBucket: "my-diary-2026.firebasestorage.app",
+        messagingSenderId: "610183558133",
+        appId: "1:610183558133:web:dc3ec68f179449cefba6bc",
+        measurementId: "G-4LVHLEVL6W"
+    };
+
+    // 初始化
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    // 初始化编辑器
+    var quill = new Quill('#editor', {
+        theme: 'snow',
+        modules: {
+            toolbar: [
+                [{ 'size': ['small', false, 'large', 'huge'] }],
+                ['bold', 'italic', 'underline'],
+                [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                [{ 'align': [] }],
+                ['clean']
+            ]
+        }
+    });
+
+    // 登录/注册逻辑
+    window.handleAuth = async () => {
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        try {
+            await signInWithEmailAndPassword(auth, email, password);
+        } catch (error) {
+            if (error.code === 'auth/user-not-found') {
+                await createUserWithEmailAndPassword(auth, email, password);
+            } else {
+                alert("登录出错: " + error.message);
+            }
+        }
+    };
+
+    // 监听登录状态
+    onAuthStateChanged(auth, (user) => {
+        if (user) {
+            document.getElementById('auth-overlay').style.display = 'none';
+            document.getElementById('app').style.display = 'flex';
+            document.getElementById('user-display').innerText = user.email;
+            loadDiary(user.uid);
+        } else {
+            document.getElementById('auth-overlay').style.display = 'flex';
+            document.getElementById('app').style.display = 'none';
+        }
+    });
+
+    // 保存到 Firebase
+    window.saveToFirebase = async () => {
+        const user = auth.currentUser;
+        if (!user) return;
+        const title = document.getElementById('diary-title').value;
+        const content = quill.root.innerHTML;
+        
+        try {
+            await setDoc(doc(db, "diaries", user.uid), {
+                title: title,
+                content: content,
+                lastUpdated: new Date()
+            });
+            alert("云端保存成功！");
+        } catch (e) { alert("保存失败: " + e); }
+    };
+
+    // 读取日记
+    async function loadDiary(uid) {
+        const docRef = doc(db, "diaries", uid);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            document.getElementById('diary-title').value = data.title || "";
+            quill.root.innerHTML = data.content || "";
+        }
+    }
+
+    // 退出
+    window.handleLogout = () => signOut(auth);
+
+    // 侧边栏折叠
+    window.toggleSidebar = () => {
+        const sb = document.getElementById('sidebar');
+        sb.classList.toggle('collapsed');
+        document.querySelector('.toggle-btn').innerText = sb.classList.contains('collapsed') ? '▶' : '◀';
+    };
+</script>
+</body>
+</html>
